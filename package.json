@@ -1,0 +1,12 @@
+{
+  "name": "okdriver-dvr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DVR-style History Playback for okDriver Smart Dashcam Platform — BML Munjal University Full Stack Assignment",
+  "scripts": {
+    "start": "npx serve . -p 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.3"
+  }
+}
