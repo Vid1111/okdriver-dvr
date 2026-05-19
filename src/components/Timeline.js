@@ -1,30 +1,93 @@
-// Timeline.js - Clickable 24-hour timeline with event markers and scrubbing
+var tlContainer = null;
+var tlSeekCb    = null;
 
-var timelineTrack = document.getElementById("timelineTrack");
+function initTimeline(el, onSeek) {
+  tlContainer = el;
+  tlSeekCb    = onSeek;
 
-function updateTimeline() {
-  document.getElementById("tlFill").style.width  = (state.progress * 100) + "%";
-  document.getElementById("tlThumb").style.left  = (state.progress * 100) + "%";
+  el.innerHTML =
+    '<div class="tl-header">'
+    +  '<span class="tl-title">HISTORY TIMELINE</span>'
+    +  '<span class="tl-curtime" id="tlCurTime">--:--:--</span>'
+    +'</div>'
+    +'<div class="tl-body" id="tlBody">'
+    +  '<div class="tl-row">'
+    +    '<span class="tl-rowlabel">FWD</span>'
+    +    '<div class="tl-track" id="tlFwdTrack"></div>'
+    +  '</div>'
+    +  '<div class="tl-row">'
+    +    '<span class="tl-rowlabel">IN</span>'
+    +    '<div class="tl-track" id="tlInTrack"></div>'
+    +  '</div>'
+    +  '<div class="tl-scrubber" id="tlScrubber"></div>'
+    +'</div>'
+    +'<div class="tl-hourlabels" id="tlHourLabels"></div>';
+
+  var body = document.getElementById("tlBody");
+  body.addEventListener("click",     handleSeek);
+  body.addEventListener("mousemove", function(e) { if (e.buttons === 1) handleSeek(e); });
 }
 
-function timelineSeek(e) {
-  var rect = timelineTrack.getBoundingClientRect();
-  var p    = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  state.progress = p;
+function renderTimeline(tl) {
+  if (!tl) return;
 
-  // Auto-select the matching clip
-  var ci = 0;
-  for (var i = 0; i < CLIP_POS.length; i++) {
-    if (p >= CLIP_POS[i]) ci = i;
+  var span = tl.end - tl.start;
+  drawSegments("tlFwdTrack", tl.fwdClips, tl.start, span, "tl-fwd");
+  drawSegments("tlInTrack",  tl.inClips,  tl.start, span, "tl-in");
+
+  // hour labels
+  var labelEl = document.getElementById("tlHourLabels");
+  if (!labelEl) return;
+  labelEl.innerHTML = "";
+  var startHr = new Date(tl.start).getHours();
+  var endHr   = new Date(tl.end).getHours() + 1;
+  for (var h = startHr; h <= endHr; h++) {
+    var pct = ((h - startHr) / (endHr - startHr)) * 100;
+    var lbl = document.createElement("span");
+    lbl.className   = "tl-hourlabel";
+    lbl.style.left  = pct + "%";
+    lbl.textContent = twoDigit(h) + ":00";
+    labelEl.appendChild(lbl);
   }
-  state.clipIdx = ci;
-  renderClipList();
-  updateClipIndicator();
-  updateTimeline();
-  drawMap();
 }
 
-timelineTrack.addEventListener("click", timelineSeek);
-timelineTrack.addEventListener("mousemove", function(e) {
-  if (e.buttons === 1) timelineSeek(e);
-});
+function drawSegments(trackId, clipList, start, span, cls) {
+  var el = document.getElementById(trackId);
+  if (!el) return;
+  el.innerHTML = "";
+  clipList.forEach(function(c) {
+    var left  = ((c.timestamp - start) / span) * 100;
+    var width = (CLIP_DURATION * 1000 / span) * 100;
+    var seg   = document.createElement("div");
+    seg.className = "tl-segment " + cls;
+    seg.style.left  = left.toFixed(2) + "%";
+    seg.style.width = width.toFixed(2) + "%";
+    seg.title = c.displayTime;
+    el.appendChild(seg);
+  });
+}
+
+function moveScrubber(ms) {
+  var tl = appState.timeline;
+  if (!tl) return;
+  var pct = Math.max(0, Math.min(100, ((ms - tl.start) / (tl.end - tl.start)) * 100));
+  var scrubber = document.getElementById("tlScrubber");
+  if (scrubber) scrubber.style.left = pct + "%";
+  var timeEl = document.getElementById("tlCurTime");
+  if (timeEl) timeEl.textContent = msToTime(ms);
+}
+
+function handleSeek(e) {
+  var body = document.getElementById("tlBody");
+  if (!body || !appState.timeline) return;
+  var rect    = body.getBoundingClientRect();
+  var pct     = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  var tl      = appState.timeline;
+  var target  = tl.start + pct * (tl.end - tl.start);
+  if (tlSeekCb) tlSeekCb(target);
+}
+
+function msToTime(ms) {
+  var d = new Date(ms);
+  return twoDigit(d.getHours()) + ":" + twoDigit(d.getMinutes()) + ":" + twoDigit(d.getSeconds());
+}

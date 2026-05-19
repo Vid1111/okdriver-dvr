@@ -5,136 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>okDriver — DVR History Playback</title>
   <link rel="stylesheet" href="src/App.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
 </head>
 <body>
-  <div class="app">
-    <header class="app-header">
-      <div class="logo"><div class="logo-dot"></div><div class="logo-text">okDRIVER</div></div>
-      <div class="header-sep"></div>
-      <span class="header-subtitle">DVR HISTORY PLAYBACK</span>
-      <div class="header-right">
-        <div class="rec-badge"><div class="rec-dot"></div>LIVE</div>
-        <div class="header-sep"></div>
-        <span class="header-stat">VEHICLE: <b>MH-12-AB-3456</b></span>
-        <div class="header-sep"></div>
-        <span class="header-stat">DATE: <b>09 MAY 2026</b></span>
-      </div>
-    </header>
-    <main class="app-main">
-      <section class="video-section">
-        <div class="video-wrapper" id="videoWrapper">
-          <canvas id="mainCanvas" class="dvr-canvas"></canvas>
-          <div class="hud hud-tl">
-            <div class="hud-label">CAMERA</div>
-            <div class="hud-val">FRONT CAM</div>
-            <div id="eventPill"></div>
-          </div>
-          <div class="hud hud-tr">
-            <div class="hud-label">TIMESTAMP</div>
-            <div class="hud-timecode" id="hudTime">07:38:00</div>
-            <div class="hud-label">09 MAY 2026</div>
-          </div>
-          <div class="hud hud-bl">
-            <div class="hud-label">GPS</div>
-            <div class="hud-val" id="hudGps">18.5100 N, 73.8400 E</div>
-            <div class="hud-val" id="hudRoad">NH-48, Pune</div>
-          </div>
-          <div class="hud hud-br">
-            <div class="hud-label">SPEED</div>
-            <div class="hud-speed" id="hudSpeed">47</div>
-            <div class="hud-unit">KM/H</div>
-          </div>
-          <div class="pause-overlay" id="pauseOverlay" style="display:none">
-            <div class="pause-icon">&#9654;</div>
-          </div>
-        </div>
-        <div class="timeline-wrap">
-          <div class="timeline-header">
-            <span class="tl-label">24H TIMELINE - CLICK TO SEEK</span>
-            <span class="tl-timecode" id="tlTimecode">07:38:00</span>
-          </div>
-          <div class="timeline-track" id="timelineTrack">
-            <div class="tl-segment active" style="left:20%;width:50%"></div>
-            <div class="tl-event-marker danger"  style="left:32%"></div>
-            <div class="tl-event-marker warning" style="left:36%"></div>
-            <div class="tl-event-marker danger"  style="left:54%"></div>
-            <div class="tl-fill"  id="tlFill"  style="width:20%"></div>
-            <div class="tl-thumb" id="tlThumb" style="left:20%"></div>
-          </div>
-          <div class="tl-time-labels">
-            <span class="tl-time-label">00:00</span>
-            <span class="tl-time-label">06:00</span>
-            <span class="tl-time-label">12:00</span>
-            <span class="tl-time-label">18:00</span>
-            <span class="tl-time-label">24:00</span>
-          </div>
-        </div>
-        <div class="playback-controls">
-          <button class="ctrl-btn" id="btnBack">&#9198;</button>
-          <button class="ctrl-btn" id="btnPrev">&#9194;</button>
-          <button class="ctrl-btn active" id="btnPlay">&#9208;</button>
-          <button class="ctrl-btn" id="btnNext">&#9193;</button>
-          <button class="ctrl-btn" id="btnFwd">&#9197;</button>
-          <div class="ctrl-sep"></div>
-          <div class="speed-selector">
-            <span class="speed-label">SPEED</span>
-            <button class="speed-btn" data-speed="0.5">0.5x</button>
-            <button class="speed-btn active" data-speed="1">1x</button>
-            <button class="speed-btn" data-speed="2">2x</button>
-            <button class="speed-btn" data-speed="4">4x</button>
-          </div>
-          <div class="ctrl-sep"></div>
-          <span class="clip-indicator">CLIP <b id="clipCur">1</b> / 8 <span class="clip-name" id="clipName">Session Start</span></span>
-          <span class="duration-display" id="durDisplay">07:38:00 / 08:23:00</span>
-        </div>
-      </section>
-      <aside class="sidebar">
-        <div class="sidebar-tabs">
-          <button class="stab active" data-tab="clips">CLIPS</button>
-          <button class="stab" data-tab="telemetry">TELEMETRY</button>
-          <button class="stab" data-tab="map">MAP</button>
-        </div>
-        <div class="sidebar-body">
-          <div id="tab-clips" class="clip-list"></div>
-          <div id="tab-telemetry" class="telem-panel" style="display:none">
-            <div class="telem-grid">
-              <div class="telem-card"><div class="telem-card-label">SPEED</div><div class="telem-card-val" id="tSpeed">47</div><div class="telem-card-unit">km/h</div></div>
-              <div class="telem-card"><div class="telem-card-label">G-FORCE</div><div class="telem-card-val" id="tGforce">0.20</div><div class="telem-card-unit">G</div></div>
-              <div class="telem-card"><div class="telem-card-label">RPM</div><div class="telem-card-val" id="tRpm">2,116</div><div class="telem-card-unit">rpm</div></div>
-              <div class="telem-card"><div class="telem-card-label">HEADING</div><div class="telem-card-val" id="tHeading">NNE</div><div class="telem-card-unit">deg</div></div>
-            </div>
-            <div class="sparkline-wrap"><div class="sparkline-label">SPEED HISTORY</div><canvas id="speedChart" height="44" style="width:100%;display:block"></canvas></div>
-            <div class="sparkline-wrap"><div class="sparkline-label">G-FORCE HISTORY</div><canvas id="gforceChart" height="44" style="width:100%;display:block"></canvas></div>
-            <div class="telem-section-title">SESSION EVENTS</div>
-            <div id="eventList"></div>
-          </div>
-          <div id="tab-map" class="map-panel" style="display:none">
-            <canvas id="mapCanvas" height="180" style="width:100%;display:block;border-radius:4px;border:1px solid var(--border)"></canvas>
-            <div class="map-stats">
-              <div class="map-stat"><div class="map-stat-label">DISTANCE</div><div class="map-stat-val">47.3 km</div></div>
-              <div class="map-stat"><div class="map-stat-label">DURATION</div><div class="map-stat-val">45 min</div></div>
-              <div class="map-stat"><div class="map-stat-label">AVG SPEED</div><div class="map-stat-val">63 km/h</div></div>
-              <div class="map-stat"><div class="map-stat-label">MAX SPEED</div><div class="map-stat-val">94 km/h</div></div>
-              <div class="map-stat"><div class="map-stat-label">EVENTS</div><div class="map-stat-val" style="color:var(--danger)">3</div></div>
-              <div class="map-stat"><div class="map-stat-label">ROUTE</div><div class="map-stat-val" style="font-size:10px">NH-48 to JM Rd</div></div>
-            </div>
-            <div class="map-legend">
-              <div class="legend-item"><div class="legend-dot danger"></div><span>Hard Event</span></div>
-              <div class="legend-item"><div class="legend-dot warning"></div><span>Warning</span></div>
-              <div class="legend-item"><div class="legend-dot current"></div><span>Current</span></div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </main>
-  </div>
-  <script src="src/store/dvrStore.js"></script>
-  <script src="src/components/DVRPlayer.js"></script>
+  <div id="root"></div>
+
+  <script src="src/utils/clipUtils.js"></script>
+  <script src="src/utils/api.js"></script>
+  <script src="src/store/appState.js"></script>
+  <script src="src/store/clipQueue.js"></script>
   <script src="src/components/Timeline.js"></script>
-  <script src="src/components/PlaybackControls.js"></script>
+  <script src="src/components/VideoPlayer.js"></script>
   <script src="src/components/ClipList.js"></script>
-  <script src="src/components/TelemetryPanel.js"></script>
-  <script src="src/components/MapPanel.js"></script>
+  <script src="src/components/PlaybackController.js"></script>
   <script src="src/main.js"></script>
 </body>
 </html>

@@ -1,48 +1,58 @@
-// ClipList.js - Sidebar clip list with thumbnails and live progress bars
+var clipListEl = null;
+
+function initClipList(el) {
+  clipListEl = el;
+}
 
 function renderClipList() {
-  var el = document.getElementById("tab-clips");
-  el.innerHTML = CLIPS.map(function(c, i) {
-    return '<div class="clip-item' + (i === state.clipIdx ? " active" : "") + '" onclick="selectClip(' + i + ')">'
-      + '<div class="clip-thumb-wrap">'
-      +   '<canvas id="clipThumb' + i + '" width="48" height="32"></canvas>'
-      +   '<div class="clip-dur">' + c.dur + '</div>'
+  if (!clipListEl) return;
+
+  var clips = appState.activeClips.length
+    ? appState.activeClips
+    : (appState.timeline ? appState.timeline.fwdClips : []);
+
+  if (!clips.length) {
+    clipListEl.innerHTML = '<div class="cl-empty">No clips loaded.</div>';
+    return;
+  }
+
+  var qsnap = getQueueSnapshot();
+  var qmap  = {};
+  qsnap.forEach(function(e) { qmap[e.idx] = e; });
+
+  clipListEl.innerHTML = clips.map(function(c, i) {
+    var active  = i === appState.currentIdx;
+    var qentry  = qmap[i];
+    var qs      = qentry ? qentry.status : "";
+    var badge   = "";
+    if (qs === "ready")      badge = '<span class="cl-badge qs-ready">READY</span>';
+    if (qs === "polling")    badge = '<span class="cl-badge qs-polling">LOADING</span>';
+    if (qs === "requesting") badge = '<span class="cl-badge qs-requesting">QUEUED</span>';
+    if (qs === "error")      badge = '<span class="cl-badge qs-error">ERROR</span>';
+
+    return '<div class="cl-item' + (active ? " active" : "") + '" onclick="seekToTime(' + c.timestamp + ')">'
+      + '<div class="cl-time">' + c.displayTime + '</div>'
+      + '<div class="cl-info">'
+      +   '<div class="cl-cam">'  + c.cameraType + '</div>'
+      +   '<div class="cl-dur">3:00</div>'
       + '</div>'
-      + '<div class="clip-meta">'
-      +   '<div class="clip-title">' + c.title + '</div>'
-      +   '<div class="clip-sub">'  + c.startTime + ' - ' + c.road + '</div>'
-      +   '<div class="clip-progress-bar"><div class="clip-progress-fill" id="clipBar' + i + '" style="width:' + clipProgressPct(i) + '%"></div></div>'
-      + '</div>'
-      + '<span class="clip-badge ' + (c.type === "event" ? "evt" : "norm") + '">' + (c.type === "event" ? "EVT" : "OK") + '</span>'
+      + badge
       + '</div>';
   }).join("");
-
-  // Draw thumbnails after inserting into DOM
-  CLIPS.forEach(function(c, i) { drawThumb(i, c); });
 }
 
-function drawThumb(i, clip) {
-  var c = document.getElementById("clipThumb" + i);
-  if (!c) return;
-  var cx = c.getContext("2d"), w = 48, h = 32;
-  cx.fillStyle = "#1a1e28"; cx.fillRect(0, 0, w, h);
-  cx.fillStyle = "#0d1520"; cx.fillRect(0, 0, w, h * 0.4);
-  cx.fillStyle = "#1c2030"; cx.fillRect(0, h * 0.4, w, h * 0.6);
-  cx.strokeStyle = "rgba(255,220,0,0.5)"; cx.lineWidth = 1; cx.setLineDash([3, 3]);
-  cx.beginPath(); cx.moveTo(w / 2, h * 0.42); cx.lineTo(w / 2, h); cx.stroke();
-  cx.setLineDash([]);
-  if (clip.type === "event") {
-    cx.fillStyle = "rgba(239,68,68,0.25)"; cx.fillRect(0, 0, w, h);
-    cx.strokeStyle = "rgba(239,68,68,0.5)"; cx.lineWidth = 1; cx.strokeRect(0.5, 0.5, w - 1, h - 1);
-  }
-  cx.fillStyle = "rgba(0,212,255,0.7)";
-  cx.font = "bold 6px monospace";
-  cx.fillText(clip.startTime, 2, h - 3);
-}
+function updateQueueBar() {
+  var bar = document.getElementById("queueBar");
+  if (!bar) return;
 
-function updateClipBars() {
-  for (var i = 0; i < CLIPS.length; i++) {
-    var bar = document.getElementById("clipBar" + i);
-    if (bar) bar.style.width = clipProgressPct(i) + "%";
-  }
+  var snap = getQueueSnapshot();
+  if (!snap.length) { bar.innerHTML = ""; return; }
+
+  bar.innerHTML = snap.map(function(e, i) {
+    var label = i === 0 ? "NOW" : "+" + i;
+    return '<div class="qb-item qb-' + e.status + '">'
+      + '<span>' + label + '</span>'
+      + '<span>' + e.clip.displayTime + '</span>'
+      + '</div>';
+  }).join("");
 }
