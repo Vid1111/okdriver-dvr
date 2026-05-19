@@ -1,11 +1,16 @@
 {
   "name": "okdriver-dvr",
+  "private": true,
   "version": "1.0.0",
-  "description": "DVR History Playback feature for okDriver dashcam platform",
+  "type": "module",
   "scripts": {
-    "start": "npx serve . -p 3000"
+    "dev": "vite",
+    "start": "vite"
   },
   "devDependencies": {
-    "serve": "^14.2.3"
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "mpegts.js": "^1.8.0"
   }
 }
