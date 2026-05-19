@@ -1,75 +1,381 @@
 # okDriver DVR History Playback
 
-DVR-style continuous video playback for the okDriver dashcam platform.  
-Built for the BML Munjal University Full Stack Developer Assignment.
+Continuous DVR-style history playback system for the okDriver smart dashcam platform.
 
-## What this does
+Built as part of the Full Stack Developer Assignment provided by okDriver / BML Munjal University. 
 
-The existing History page on okDriver plays one 3-minute clip at a time and stops. This replaces that with continuous playback — like a CP Plus or Hikvision DVR:
+---
 
-- Click anywhere on the 24-hour timeline to start playing from that exact moment
-- When a clip ends, the next one loads and plays automatically
-- 3 clips are preloaded in the background at all times to avoid gaps
-- A scrubber moves along the timeline as the video plays
+# Overview
 
-## How to run
+The existing okDriver History Playback module only plays a single `.ts` clip at a time.
+Users must manually select the next clip, and the timeline is non-interactive.
 
-**Option 1 — open directly**
-Just double-click `index.html` in Chrome or Edge.
+This project implements a DVR-like continuous playback experience similar to CP Plus / Hikvision systems.
 
-**Option 2 — local server (avoids CORS on some browsers)**
-```bash
-python -m http.server 3000
-```
-Then open `http://localhost:3000`
+Features implemented:
 
-**Option 3 — VS Code**
-Install the Live Server extension, right-click `index.html`, Open with Live Server.
+* Interactive 24-hour playback timeline
+* Click-to-seek playback
+* Continuous auto-play between clips
+* Playback queue with preloading
+* Timeline scrubber movement
+* Loading and buffering states
+* Playback polling system
+* Clip metadata parsing
+* Queue status visualization
+* Timeline segment rendering for Forward/Inward cameras
 
-## How to use
+---
 
-1. Click **Search** to load available clips (calls API 2)
-2. Click **Refresh** if no clips appear — this wakes the physical device (API 1)
-3. Click anywhere on the **HISTORY TIMELINE** to start playback from that time
-4. Video plays automatically and moves to the next clip when it ends
-5. The queue bar at the top of the sidebar shows NOW / +1 / +2 / +3 preload status
+# Features
 
-## Project structure
+## DVR-style Timeline Playback
 
-```
+* Click anywhere on the timeline to jump to that timestamp
+* Automatically identifies the correct clip
+* Starts playback from the correct offset
+
+## Continuous Playback
+
+* Automatically loads the next chronological clip
+* No manual interaction required between clips
+* Queue system keeps future clips ready
+
+## Clip Queue System
+
+Playback queue maintains:
+
+* Current clip
+* Next clip
+* Buffered upcoming clips
+
+This minimizes playback interruption.
+
+## Timeline Visualization
+
+* Separate ForwardCam / InwardCam tracks
+* Real-time moving scrubber
+* Clip markers rendered across the day
+
+## Upload Polling Logic
+
+The dashcam uploads videos asynchronously after API 3 is triggered.
+
+The frontend:
+
+* polls upload readiness
+* retries automatically
+* waits until the uploaded video becomes available
+
+---
+
+# Screenshots
+
+## Original okDriver History Screen
+
+The original platform only played one clip at a time and required manual navigation. 
+
+## Improved DVR Playback UI
+
+Implemented:
+
+* queue controls
+* timeline interaction
+* continuous playback architecture
+* playback polling
+* preloading states
+
+---
+
+# Tech Stack
+
+| Layer    | Technology                  |
+| -------- | --------------------------- |
+| Frontend | Vanilla JavaScript          |
+| Styling  | CSS                         |
+| Video    | HTML5 Video                 |
+| APIs     | REST                        |
+| Timeline | Custom Canvas/DOM rendering |
+
+---
+
+# Project Structure
+
+```txt
 okdriver-dvr/
 ├── index.html
 ├── src/
 │   ├── App.css
-│   ├── main.js                        # boots the app, wires up all buttons
+│   ├── main.js
 │   ├── utils/
-│   │   ├── clipUtils.js               # parses filenames, builds timeline data
-│   │   └── api.js                     # API 1, 2, 3 calls + polling logic
+│   │   ├── clipUtils.js
+│   │   └── api.js
 │   ├── store/
-│   │   ├── appState.js                # global state object
-│   │   └── clipQueue.js               # preload queue — always keeps 3 clips ahead
+│   │   ├── appState.js
+│   │   └── clipQueue.js
 │   └── components/
-│       ├── Timeline.js                # renders 24h bar, handles click/drag seek
-│       ├── VideoPlayer.js             # HLS.js wrapper, fires ended event
-│       ├── ClipList.js                # sidebar clip list with status badges
-│       └── PlaybackController.js      # connects queue → player → timeline
+│       ├── Timeline.js
+│       ├── VideoPlayer.js
+│       ├── ClipList.js
+│       └── PlaybackController.js
 ```
 
-## APIs used
+---
 
-| API | Endpoint | What it does |
-|---|---|---|
-| 1 | POST `/api/playback/request-list/{imei}` | Wakes device, triggers TF card scan |
-| 2 | GET `/api/playback/videos/{imei}` | Returns list of available .ts filenames |
-| 3 | POST `/api/playback/start/{imei}` | Tells device to upload a specific clip |
+# Setup
 
-After API 3 is called, the device uploads asynchronously. The app polls the upload URL every 2 seconds (up to 60 seconds) until the file is available, then plays it.
+## Option 1 — Open Directly
 
-## Device credentials
+Open:
 
-| | |
-|---|---|
-| Platform | https://dashcam.okdriver.in |
-| Login | demo@okdriver.in / 12345678 |
-| Vehicle | DL5CJ7355 |
-| IMEI | 864993060968006 |
+```txt
+index.html
+```
+
+in Chrome or Edge.
+
+---
+
+## Option 2 — Local HTTP Server
+
+Recommended to avoid browser CORS restrictions.
+
+```bash
+python -m http.server 3000
+```
+
+Then open:
+
+```txt
+http://localhost:3000
+```
+
+---
+
+## Option 3 — VS Code Live Server
+
+* Install Live Server extension
+* Right-click `index.html`
+* Open with Live Server
+
+---
+
+# How It Works
+
+## API Flow
+
+The platform uses a 3-step playback pipeline. 
+
+### API 1 — Request Video Scan
+
+```http
+POST /api/playback/request-list/{imei}
+```
+
+* Wakes the device
+* Starts TF card scan
+* Device asynchronously uploads video inventory
+
+---
+
+### API 2 — Fetch Video Inventory
+
+```http
+GET /api/playback/videos/{imei}
+```
+
+Returns:
+
+```txt
+YYYY_MM_DD_HH_MM_SS_CC.ts
+```
+
+Example:
+
+```txt
+2026_05_02_16_24_15_03.ts
+```
+
+This metadata is parsed to build the timeline.
+
+---
+
+### API 3 — Start Clip Upload
+
+```http
+POST /api/playback/start/{imei}
+```
+
+Requests the dashcam device to upload a specific `.ts` clip.
+
+The frontend then polls until the uploaded clip becomes available.
+
+---
+
+# Timeline Logic
+
+The timeline converts timestamps into:
+
+```txt
+timestamp → clip mapping
+```
+
+When a user clicks:
+
+1. Timeline calculates clicked timestamp
+2. Matching clip is identified
+3. API 3 is triggered
+4. Upload readiness polling begins
+5. Playback starts from calculated offset
+
+---
+
+# Playback Queue Architecture
+
+The system uses a DVR-style queue model.
+
+Queue contains:
+
+```txt
+[current, next, buffered]
+```
+
+As soon as the current clip starts:
+
+* next clip is prefetched
+* upload readiness polling begins
+* playback transition becomes smoother
+
+This follows the architecture suggested in the assignment document. 
+
+---
+
+# Known Technical Challenges
+
+## MPEG-TS (`.ts`) Browser Playback
+
+The backend currently uploads raw `.ts` MPEG Transport Stream files.
+
+Raw `.ts` playback support differs across browsers:
+
+| Browser | Native `.ts` Support |
+| ------- | -------------------- |
+| Chrome  | Limited              |
+| Edge    | Limited              |
+| Safari  | Partial              |
+| Firefox | Inconsistent         |
+
+Because of this:
+
+* some uploaded clips download correctly
+* but fail to play natively in HTML5 video
+
+---
+
+# Playback Investigation Performed
+
+The following approaches were investigated:
+
+* Native HTML5 playback
+* HLS.js integration
+* MPEGTS.js integration
+* Direct TS streaming
+* Upload polling improvements
+* Queue preloading
+* Buffer management
+
+---
+
+# Backend/API Observations
+
+During testing, the following backend/device-side behavior was observed:
+
+* API 1 successfully queues TF card scan
+* Session status changes:
+
+  * `collecting`
+  * `uploading`
+* API 2 intermittently returns:
+
+  * `videos: []`
+  * `count: 0`
+  * `parsedDataAvailable: false`
+* `currentVideo` sometimes appears temporarily
+* Uploaded `.ts` files become downloadable
+* Final parsed inventory occasionally disappears again
+
+This indicates the playback pipeline is highly asynchronous and may depend on:
+
+* device upload timing
+* TF card scan completion
+* backend parsing finalization
+* or session expiration
+
+---
+
+# Production Recommendation
+
+A production-ready DVR playback system should ideally expose:
+
+* `.m3u8` HLS playlists
+* fragmented MP4 streams
+* or server-side transcoding
+
+instead of raw `.ts` uploads.
+
+This would provide:
+
+* smoother playback
+* better browser compatibility
+* lower buffering
+* more reliable seeking
+
+---
+
+# Assignment Requirements Covered
+
+Implemented features from the assignment specification include: 
+
+* Clickable timeline
+* Auto-play between clips
+* Playback queue
+* Timeline scrubber
+* Loading states
+* Clip polling
+* API integration
+* Playback controls
+* Queue prefetching
+* Timestamp parsing
+
+---
+
+# Test Credentials
+
+|          |                                             |
+| -------- | ------------------------------------------- |
+| Platform | https://dashcam.okdriver.in                 |
+| Login    | [demo@okdriver.in](mailto:demo@okdriver.in) |
+| Password | 12345678                                    |
+| Vehicle  | DL5CJ7355                                   |
+| IMEI     | 864993060968006                             |
+| API Base | http://smart.okdriver.in:5000               |
+
+---
+
+# Future Improvements
+
+* True HLS playback support
+* Dual-camera synchronized playback
+* Better buffering strategy
+* IndexedDB clip caching
+* Timeline zoom levels
+* Playback analytics
+* Gap detection visualization
+* MP4 transcoding support
+
+---
+
+# Author
+
+Developed as part of the okDriver Full Stack Developer Assignment.
