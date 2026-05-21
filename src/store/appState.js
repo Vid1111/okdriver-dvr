@@ -1,4 +1,4 @@
-var appState = {
+export var appState = {
   imei:           "864993060968006",
   vehicle:        "DL5CJ7355",
   date:           "2026-05-07",
@@ -11,7 +11,7 @@ var appState = {
   activeClips:    [],
   currentIdx:     -1,
 
-  playerState:    "idle",  // idle | loading | playing | paused | buffering | error
+  playerState:    "idle",
   currentUrl:     null,
   startOffset:    0,
 
@@ -22,13 +22,21 @@ var appState = {
 
 var listeners = [];
 
-function onStateChange(fn) {
+export function onStateChange(fn) {
   listeners.push(fn);
 }
 
-function setState(changes) {
-  Object.keys(changes).forEach(function(k) {
-    appState[k] = changes[k];
+export function setState(changes) {
+
+  Object.keys(changes)
+    .forEach(function(k) {
+
+      appState[k] =
+        changes[k];
+
+    });
+
+  listeners.forEach(function(fn) {
+    fn(appState);
   });
-  listeners.forEach(function(fn) { fn(appState); });
 }

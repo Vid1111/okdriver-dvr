@@ -1,323 +1,193 @@
+import {
+  startClipPlayback,
+  waitForClip
+} from "../utils/api.js";
+
+import {
+  appState
+} from "./appState.js";
+
 var PRELOAD_COUNT = 3;
 
-var clips = [];
-
+var clips      = [];
 var currentIdx = -1;
+var queue      = [];
 
-var queue = [];
-
-var onReady = null;
-var onError = null;
+var onReady   = null;
+var onError   = null;
 var onAdvance = null;
 
 // --------------------------------------------------
-// INIT
+// INIT (first time only — sets clips list and callbacks)
 // --------------------------------------------------
+export function initQueue(clipList, startIdx, readyCb, errorCb, advanceCb) {
+  clips     = clipList;
+  onReady   = readyCb   || function(){};
+  onError   = errorCb   || function(){};
+  onAdvance = advanceCb || function(){};
 
-function initQueue(
-  clipList,
-  startIdx,
-  readyCb,
-  errorCb,
-  advanceCb
-) {
-  clips = clipList;
+  // Don't wipe the queue — call seekQueue to move pointer
+  seekQueue(startIdx);
+}
 
-  currentIdx = startIdx;
+// --------------------------------------------------
+// SEEK — move currentIdx to any position, keeping ready entries
+// --------------------------------------------------
+export function seekQueue(idx) {
+  currentIdx = idx;
 
-  queue = [];
+  // Drop entries that are far behind (more than 2 behind current)
+  queue = queue.filter(function(e) {
+    return e.idx >= currentIdx - 2;
+  });
 
-  onReady = readyCb || function () {};
-
-  onError = errorCb || function () {};
-
-  onAdvance =
-    advanceCb || function () {};
-
-  for (
-    var i = startIdx;
-    i <
-    Math.min(
-      startIdx +
-        PRELOAD_COUNT +
-        1,
-      clips.length
-    );
-    i++
-  ) {
+  // Ensure current + next PRELOAD_COUNT clips are in queue
+  for (var i = currentIdx; i < Math.min(currentIdx + PRELOAD_COUNT + 1, clips.length); i++) {
     addToQueue(i);
   }
+
+  if (onAdvance) onAdvance(currentIdx);
 }
 
 // --------------------------------------------------
-// ADVANCE
+// ADVANCE (auto-play next)
 // --------------------------------------------------
-
-function advanceQueue() {
+export function advanceQueue() {
   currentIdx++;
 
-  if (currentIdx >= clips.length) {
-    return null;
-  }
+  console.log("ADVANCING TO:", currentIdx);
 
-  queue = queue.filter(
-    function (e) {
-      return (
-        e.idx >= currentIdx
-      );
-    }
-  );
+  if (currentIdx >= clips.length) return null;
 
-  var next =
-    currentIdx +
-    PRELOAD_COUNT;
+  // Drop old entries
+  queue = queue.filter(function(e) { return e.idx >= currentIdx - 2; });
 
-  if (next < clips.length) {
-    addToQueue(next);
-  }
+  // Preload next
+  var next = currentIdx + PRELOAD_COUNT;
+  if (next < clips.length) addToQueue(next);
 
-  if (onAdvance) {
-    onAdvance(currentIdx);
-  }
+  if (onAdvance) onAdvance(currentIdx);
 
-  return queue[0] || null;
+  return getEntryByIdx(currentIdx) || null;
 }
 
 // --------------------------------------------------
-
-function getCurrentEntry() {
-  return (
-    queue.find(function (e) {
-      return (
-        e.idx === currentIdx
-      );
-    }) || null
-  );
-}
-
-function getQueueSnapshot() {
-  return queue.slice(
-    0,
-    PRELOAD_COUNT + 1
-  );
-}
-
+// GETTERS
 // --------------------------------------------------
+export function getCurrentEntry() {
+  return getEntryByIdx(currentIdx);
+}
 
-function resetQueue() {
-  queue = [];
+export function getEntryByIdx(idx) {
+  return queue.find(function(e) { return e.idx === idx; }) || null;
+}
 
+export function getQueueSnapshot() {
+  // Return entries around currentIdx for the queue bar display
+  return queue
+    .filter(function(e) { return e.idx >= currentIdx && e.idx <= currentIdx + PRELOAD_COUNT; })
+    .slice(0, PRELOAD_COUNT + 1);
+}
+
+export function resetQueue() {
+  queue      = [];
   currentIdx = -1;
-
-  clips = [];
+  clips      = [];
 }
 
 // --------------------------------------------------
-// ADD TO QUEUE
+// ADD TO QUEUE (skip if already there)
 // --------------------------------------------------
-
 function addToQueue(idx) {
-  if (
-    queue.find(function (e) {
-      return e.idx === idx;
-    })
-  ) {
-    return;
-  }
+  // Already in queue (any status) — don't re-request
+  if (queue.find(function(e) { return e.idx === idx; })) return;
 
   var clip = clips[idx];
-
-  if (!clip) {
-    return;
-  }
+  if (!clip) return;
 
   var entry = {
-    idx: idx,
-
-    clip: clip,
-
-    status: "requesting",
-
-    url: null,
-
-    retries: 0,
-
-    pollProgress: null,
+    idx:          idx,
+    clip:         clip,
+    status:       "requesting",
+    url:          null,
+    retries:      0,
+    pollProgress: null
   };
 
   queue.push(entry);
+  queue.sort(function(a, b) { return a.idx - b.idx; });
 
-  queue.sort(function (a, b) {
-    return a.idx - b.idx;
-  });
+  console.log("REQUESTING:", clip.filename);
 
-  console.log(
-    "REQUESTING:",
-    clip.filename
-  );
+  var imei = appState.imei;
 
-  // ------------------------------------------------
-  // START DEVICE UPLOAD
-  // ------------------------------------------------
-
-  startClipPlayback(
-    clip.filename
-  )
-    .then(function (res) {
-      console.log(
-        "START RESPONSE:",
-        res
-      );
+  startClipPlayback(clip.filename, imei)
+    .then(function(res) {
+      console.log("START RESPONSE:", res);
 
       if (!res.success) {
-        retryQueueEntry(
-          entry
-        );
-
+        retryQueueEntry(entry);
         return;
       }
 
-      entry.status =
-        "polling";
-
-      console.log(
-        "WAITING FOR READY:",
-        clip.filename
-      );
-
-      // --------------------------------------------
-      // WAIT FOR BACKEND READY
-      // --------------------------------------------
+      entry.status = "polling";
 
       waitForClip(
         clip.filename,
-
-        // READY
-        function (readyUrl) {
-          console.log(
-            "READY:",
-            readyUrl
-          );
-
-          entry.status =
-            "ready";
-
-          entry.url =
-            readyUrl;
-
+        imei,
+        function(readyUrl) {
+          console.log("READY:", readyUrl);
+          entry.status = "ready";
+          entry.url    = readyUrl;
           onReady(entry);
         },
-
-        // FAIL
-        function () {
-          console.log(
-            "NOT READY YET:",
-            clip.filename
-          );
-
-          retryQueueEntry(
-            entry
-          );
+        function() {
+          retryQueueEntry(entry);
         },
-
-        // POLLING
-        function (
-          tries,
-          max
-        ) {
-          entry.pollProgress =
-            {
-              tries: tries,
-              max: max,
-            };
+        function(tries, max) {
+          entry.pollProgress = { tries: tries, max: max };
         }
       );
     })
-
-    .catch(function (err) {
-      console.error(
-        "QUEUE ERROR:",
-        err
-      );
-
+    .catch(function(err) {
+      console.error("QUEUE ERROR:", err);
       retryQueueEntry(entry);
     });
 }
 
 // --------------------------------------------------
-// RETRY LOGIC
+// RETRY
 // --------------------------------------------------
-
-function retryQueueEntry(
-  entry
-) {
+function retryQueueEntry(entry) {
   entry.retries++;
 
-  // ----------------------------------------------
-  // RETRY BEFORE FAILING
-  // ----------------------------------------------
+  if (entry.retries < 3) {
+    entry.status = "polling";
 
-  if (entry.retries < 10) {
-    entry.status =
-      "polling";
+    var imei = appState.imei;
 
-    console.log(
-      "RETRYING:",
-      entry.clip.filename,
-      "attempt:",
-      entry.retries
-    );
-
-    setTimeout(function () {
-      startClipPlayback(
-        entry.clip.filename
-      )
-        .then(function () {
+    setTimeout(function() {
+      startClipPlayback(entry.clip.filename, imei)
+        .then(function() {
           waitForClip(
             entry.clip.filename,
-
-            // READY
-            function (
-              readyUrl
-            ) {
-              entry.status =
-                "ready";
-
-              entry.url =
-                readyUrl;
-
+            imei,
+            function(readyUrl) {
+              entry.status = "ready";
+              entry.url    = readyUrl;
               onReady(entry);
             },
-
-            // FAIL AGAIN
-            function () {
-              retryQueueEntry(
-                entry
-              );
-            }
+            function() { retryQueueEntry(entry); },
+            null
           );
         })
-
-        .catch(function () {
-          retryQueueEntry(
-            entry
-          );
-        });
-    }, 5000);
+        .catch(function() { retryQueueEntry(entry); });
+    }, 8000);
 
     return;
   }
 
-  // ----------------------------------------------
-  // FINAL FAILURE
-  // ----------------------------------------------
-
   entry.status = "error";
-
-  console.log(
-    "FINAL ERROR:",
-    entry.clip.filename
-  );
-
+  console.log("FINAL ERROR:", entry.clip.filename);
   onError(entry);
 }

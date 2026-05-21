@@ -1,183 +1,220 @@
-var videoEl = null;
-var endedCb = null;
-var timeCb = null;
-var rafId = null;
-var clipBaseMs = 0;
+import {
+  appState,
+  setState
+} from "../store/appState.js";
 
-function initPlayer(el, onEnded, onTimeUpdate) {
-  videoEl = el;
-  endedCb = onEnded || function () {};
-  timeCb = onTimeUpdate || function () {};
+import {
+  clipEnded
+} from "./PlaybackController.js";
 
-  videoEl.addEventListener("ended", function () {
-    stopRaf();
-    endedCb();
-  });
+var video = document.getElementById("videoPlayer");
 
-  videoEl.addEventListener("waiting", function () {
+var currentUrl = null;
+
+function attachListeners() {
+
+  if (!video) return;
+
+  video.onended = function () {
+
+    console.log("VIDEO ENDED");
+
+    clipEnded();
+  };
+
+  video.onerror = function (e) {
+
+    console.error("VIDEO ERROR:", e);
+
     setState({
-      playerState: "buffering",
-      statusMsg: "Buffering..."
+      playerState: "error",
+      statusMsg: "Video playback failed."
     });
-  });
+  };
 
-  videoEl.addEventListener("playing", function () {
+  video.onwaiting = function () {
+
+    console.log("BUFFERING...");
+
+    setState({
+      playerState: "loading",
+      statusMsg: "Buffering video..."
+    });
+  };
+
+  video.onplaying = function () {
+
+    console.log("PLAYING");
+
     setState({
       playerState: "playing",
       statusMsg: ""
     });
-
-    startRaf();
-  });
-
-  videoEl.addEventListener("pause", function () {
-    if (appState.playerState === "playing") {
-      setState({
-        playerState: "paused"
-      });
-    }
-  });
-
-  videoEl.addEventListener("error", function (e) {
-    console.error(
-      "VIDEO ERROR:",
-      e
-    );
-
-    console.error(
-      "VIDEO ELEMENT ERROR:",
-      videoEl.error
-    );
-
-    setState({
-      playerState: "error",
-      statusMsg: "Clip failed to load."
-    });
-  });
+  };
 }
 
-function loadClip(
-  url,
-  clipStartMs,
-  offsetSec
-) {
-  clipBaseMs = clipStartMs || 0;
-  offsetSec = offsetSec || 0;
+attachListeners();
 
-  console.log(
-    "LOADING VIDEO:",
-    url
-  );
+export function loadClip(url, timestamp, offsetSeconds) {
+
+  if (!video) {
+    video = document.getElementById("videoPlayer");
+    attachListeners();
+  }
+
+  if (!video) return;
+
+  /*
+    HUGE FIX:
+
+    Prevent reloading SAME video again.
+    Reloading same src flushes browser buffer
+    causing 20s chunk buffering.
+  */
+  if (currentUrl === url) {
+
+    console.log("SAME VIDEO ALREADY LOADED");
+
+    if (offsetSeconds > 0) {
+
+      try {
+        video.currentTime = offsetSeconds;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    video.play();
+
+    return;
+  }
+
+  currentUrl = url;
+
+  console.log("LOADING VIDEO:", url);
 
   setState({
     playerState: "loading",
-    statusMsg: "Loading clip...",
-    currentUrl: url
+    statusMsg: "Loading video..."
   });
 
-  // IMPORTANT:
-  // raw TS playback
-  // no HLS.js
+  /*
+    Reset player safely
+  */
+  video.pause();
 
-  videoEl.pause();
+  video.removeAttribute("src");
+  video.load();
 
-  videoEl.removeAttribute("src");
+  /*
+    Better streaming support
+  */
+  video.preload = "auto";
+  video.crossOrigin = "anonymous";
 
-  videoEl.load();
+  /*
+    IMPORTANT:
+    Set src only once
+  */
+  video.src = url;
 
-  videoEl.src = url;
+  /*
+    Wait for metadata before seeking
+  */
+  video.onloadedmetadata = function () {
 
-  videoEl.currentTime =
-    offsetSec;
+    console.log("METADATA LOADED");
 
-  var playPromise =
-    videoEl.play();
+    if (offsetSeconds > 0) {
 
-  if (playPromise) {
-    playPromise.catch(function (err) {
-      console.error(
-        "PLAY FAILED:",
-        err
-      );
+      try {
 
-      setState({
-        playerState: "error",
-        statusMsg: "Could not play clip."
-      });
-    });
-  }
-}
+        video.currentTime = offsetSeconds;
 
-function playVideo() {
-  if (!videoEl) return;
+      } catch (e) {
 
-  videoEl.play().catch(
-    function () {}
-  );
-}
-
-function pauseVideo() {
-  if (!videoEl) return;
-
-  videoEl.pause();
-}
-
-function toggleVideo() {
-  if (!videoEl) return;
-
-  if (videoEl.paused) {
-    playVideo();
-  } else {
-    pauseVideo();
-  }
-}
-
-function setRate(r) {
-  if (videoEl) {
-    videoEl.playbackRate = r;
-  }
-}
-
-function startRaf() {
-  stopRaf();
-
-  function tick() {
-    if (
-      videoEl &&
-      !videoEl.paused &&
-      !videoEl.ended
-    ) {
-      var ms =
-        clipBaseMs +
-        videoEl.currentTime * 1000;
-
-      setState({
-        cursorMs: ms
-      });
-
-      moveScrubber(ms);
-
-      timeCb(ms);
+        console.error("SEEK FAILED:", e);
+      }
     }
+  };
 
-    rafId =
-      requestAnimationFrame(
-        tick
-      );
-  }
+  /*
+    CRITICAL FIX:
 
-  rafId =
-    requestAnimationFrame(
-      tick
-    );
+    canplaythrough waits for enough buffering
+    instead of tiny chunk playback.
+  */
+  video.oncanplaythrough = function () {
+
+    console.log("CAN PLAY THROUGH");
+
+    video.play()
+
+      .then(function () {
+
+        setState({
+          playerState: "playing",
+          statusMsg: ""
+        });
+
+      })
+
+      .catch(function (e) {
+
+        console.error("PLAY FAILED:", e);
+
+        setState({
+          playerState: "error",
+          statusMsg: "Playback failed."
+        });
+      });
+  };
 }
 
-function stopRaf() {
-  if (rafId) {
-    cancelAnimationFrame(
-      rafId
-    );
+export function playVideo() {
 
-    rafId = null;
-  }
+  if (!video) return;
+
+  video.play()
+
+    .then(function () {
+
+      setState({
+        playerState: "playing"
+      });
+
+    })
+
+    .catch(function (e) {
+
+      console.error(e);
+    });
+}
+
+export function pauseVideo() {
+
+  if (!video) return;
+
+  video.pause();
+
+  setState({
+    playerState: "paused"
+  });
+}
+
+export function stopVideo() {
+
+  if (!video) return;
+
+  video.pause();
+
+  video.removeAttribute("src");
+
+  video.load();
+
+  currentUrl = null;
+
+  setState({
+    playerState: "idle"
+  });
 }

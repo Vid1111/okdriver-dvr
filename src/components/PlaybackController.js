@@ -1,118 +1,358 @@
-// main logic: user clicks timeline -> find clip -> request from device -> play -> auto advance
+import {
+  appState,
+  setState
+} from "../store/appState.js";
 
-function seekToTime(targetMs) {
+import {
+  initQueue,
+  advanceQueue,
+  resetQueue
+} from "../store/clipQueue.js";
+
+import {
+  findClipAt,
+  seekOffset,
+  buildTimeline
+} from "../utils/clipUtils.js";
+
+import {
+  loadClip,
+  playVideo,
+  pauseVideo
+} from "./VideoPlayer.js";
+
+import {
+  getVideoList,
+  requestVideoList
+} from "../utils/api.js";
+
+import {
+  renderTimeline
+} from "./Timeline.js";
+
+import {
+  renderClipList
+} from "./ClipList.js";
+
+var queueInitialized = false;
+var currentlyPlayingUrl = null;
+
+/*
+  Tracks the LAST clip user selected.
+  Prevents async queue races.
+*/
+var wantedIdx = -1;
+
+export function seekToTime(targetMs) {
+
   var tl = appState.timeline;
   if (!tl) return;
 
   var clips = getActiveClips();
+
   if (!clips.length) {
-    setState({ statusMsg: "No clips for selected camera." });
+
+    setState({
+      statusMsg: "No clips for selected camera."
+    });
+
     return;
   }
 
   var idx = findClipAt(clips, targetMs);
+
   if (idx === -1) {
-    // snap to nearest clip after the clicked point
+
     for (var i = 0; i < clips.length; i++) {
-      if (clips[i].timestamp >= targetMs) { idx = i; break; }
+
+      if (clips[i].timestamp >= targetMs) {
+        idx = i;
+        break;
+      }
     }
+
     if (idx === -1) idx = 0;
   }
 
   var offset = seekOffset(clips[idx], targetMs);
 
+  /*
+    IMPORTANT:
+    Remember actual selected clip
+  */
+  wantedIdx = idx;
+
+  /*
+    CRITICAL FIX:
+    Destroy old queue completely.
+
+    Old requests were still finishing
+    and hijacking playback.
+  */
+  resetQueue();
+
+  queueInitialized = true;
+  currentlyPlayingUrl = null;
+
   setState({
-    activeClips:  clips,
-    currentIdx:   idx,
-    startOffset:  offset,
-    playerState:  "loading",
-    statusMsg:    "Requesting clip from device...",
+    activeClips: clips,
+    currentIdx: idx,
+    startOffset: offset,
+    playerState: "loading",
+    statusMsg: "Loading selected clip..."
   });
 
-  resetQueue();
-  initQueue(clips, idx, onClipReady, onClipError, onQueueMove);
+  /*
+    Rebuild queue from selected clip
+  */
+  initQueue(
+    clips,
+    idx,
+    onClipReady,
+    onClipError,
+    onQueueMove
+  );
+
   renderClipList();
 }
 
 function onClipReady(entry) {
-  var cur = getCurrentEntry();
-  if (cur && cur.idx === entry.idx) {
-    loadClip(entry.url, entry.clip.timestamp, appState.startOffset);
-    setState({ startOffset: 0 });
+
+  /*
+    Only play the MOST RECENTLY selected clip.
+  */
+  if (entry.idx !== wantedIdx) {
+    return;
   }
-  updateQueueBar();
+
+  if (currentlyPlayingUrl === entry.url) {
+    return;
+  }
+
+  currentlyPlayingUrl = entry.url;
+
+  loadClip(
+    entry.url,
+    entry.clip.timestamp,
+    appState.startOffset
+  );
+
+  setState({
+    startOffset: 0,
+    statusMsg: ""
+  });
 }
 
 function onClipError(entry) {
-  var cur = getCurrentEntry();
-  if (cur && cur.idx === entry.idx) {
-    setState({ playerState: "error", statusMsg: "Clip failed. Skipping..." });
-    setTimeout(function() { goToNextClip(); }, 2000);
+
+  console.error("CLIP FAILED:", entry);
+
+  if (entry.idx === wantedIdx) {
+
+    setState({
+      playerState: "error",
+      statusMsg: "Clip failed."
+    });
   }
-  updateQueueBar();
 }
 
 function onQueueMove(newIdx) {
-  setState({ currentIdx: newIdx });
+
+  setState({
+    currentIdx: newIdx
+  });
+
   renderClipList();
-  updateQueueBar();
 }
 
-// called when current video finishes playing
-function clipEnded() {
+export function clipEnded() {
   goToNextClip();
 }
 
 function goToNextClip() {
+
+  currentlyPlayingUrl = null;
+
   var next = advanceQueue();
+
   if (!next) {
-    setState({ playerState: "idle", statusMsg: "No more clips." });
+
+    setState({
+      playerState: "idle",
+      statusMsg: "No more clips."
+    });
+
     return;
   }
+
+  /*
+    Auto-next becomes current wanted clip
+  */
+  wantedIdx = next.idx;
+
   if (next.status === "ready") {
-    loadClip(next.url, next.clip.timestamp, 0);
+
+    currentlyPlayingUrl = next.url;
+
+    loadClip(
+      next.url,
+      next.clip.timestamp,
+      0
+    );
+
   } else {
-    setState({ playerState: "loading", statusMsg: "Loading next clip... (" + next.clip.displayTime + ")" });
+
+    setState({
+      playerState: "loading",
+      statusMsg:
+        "Loading next clip... (" +
+        next.clip.displayTime +
+        ")"
+    });
   }
 }
 
-function loadVideoList(forceRefresh) {
-  setState({ statusMsg: "Fetching video list...", videoListReady: false });
+export function loadVideoList(forceRefresh) {
 
-  function doFetch() {
+  /*
+    Reset everything on new search
+  */
+  queueInitialized = false;
+  currentlyPlayingUrl = null;
+  wantedIdx = -1;
+
+  resetQueue();
+
+  setState({
+    statusMsg: "Fetching video list...",
+    videoListReady: false
+  });
+
+  function fetchVideos(retry) {
+
+    retry = retry || 0;
+
     getVideoList(appState.imei)
+
       .then(function(res) {
-        if (!res.success || !res.videos || !res.videos.length) {
-          setState({ statusMsg: "No videos found. Try Refresh to wake the device." });
+
+        console.log("VIDEO LIST:", res);
+
+        if (!res.success || !res.videos) {
+
+          setState({
+            statusMsg: "Could not load clips."
+          });
+
           return;
         }
+
+        if (!res.videos.length) {
+
+          if (retry < 20) {
+
+            setState({
+              statusMsg:
+                "Waiting for device clips... (" +
+                retry +
+                ")"
+            });
+
+            setTimeout(function() {
+              fetchVideos(retry + 1);
+            }, 3000);
+
+            return;
+          }
+
+          setState({
+            statusMsg: "No videos found."
+          });
+
+          return;
+        }
+
         var tl = buildTimeline(res.videos);
+
         setState({
-          rawFiles:       res.videos,
-          timeline:       tl,
+          rawFiles: res.videos,
+          timeline: tl,
           videoListReady: true,
-          statusMsg:      res.videos.length + " clips found. Click the timeline to play.",
+          statusMsg: res.videos.length + " clips loaded."
         });
+
         renderTimeline(tl);
         renderClipList();
       })
-      .catch(function() {
-        setState({ statusMsg: "Could not fetch video list. Check your connection." });
+
+      .catch(function(e) {
+
+        console.error(e);
+
+        setState({
+          statusMsg: "Video list failed."
+        });
+
       });
   }
 
   if (forceRefresh) {
-    setState({ statusMsg: "Waking device... please wait." });
-    requestVideoList(appState.imei)
-      .then(function() { setTimeout(doFetch, 5000); })
-      .catch(doFetch);
+
+    setState({
+      statusMsg: "Requesting clips from device..."
+    });
+
+    requestVideoList(appState.imei, 30)
+
+      .then(function() {
+        fetchVideos(0);
+      })
+
+      .catch(function(e) {
+
+        console.error(e);
+
+        fetchVideos(0);
+      });
+
   } else {
-    doFetch();
+
+    fetchVideos(0);
   }
 }
 
-function getActiveClips() {
+export function getActiveClips() {
+
   var tl = appState.timeline;
+
   if (!tl) return [];
-  return appState.camera === "Inward" ? tl.inClips : tl.fwdClips;
+
+  return appState.camera === "Inward"
+    ? tl.inClips
+    : tl.fwdClips;
+}
+
+export function resumePlayback() {
+  playVideo();
+}
+
+export function pausePlayback() {
+  pauseVideo();
+}
+
+export function nextClip() {
+  goToNextClip();
+}
+
+export function previousClip() {
+
+  var idx = appState.currentIdx - 1;
+
+  if (idx < 0) idx = 0;
+
+  var clips = getActiveClips();
+
+  if (!clips[idx]) return;
+
+  seekToTime(clips[idx].timestamp);
 }

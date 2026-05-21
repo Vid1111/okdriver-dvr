@@ -1,3 +1,38 @@
+import {
+  initClipList
+} from "./components/ClipList.js";
+
+import {
+  initTimeline
+} from "./components/Timeline.js";
+
+import {
+  initPlayer,
+  toggleVideo,
+  setRate
+} from "./components/VideoPlayer.js";
+
+import {
+  appState,
+  onStateChange
+} from "./store/appState.js";
+
+import {
+  seekToTime,
+  clipEnded
+} from "./components/PlaybackController.js";
+
+import {
+  nextClip,
+  previousClip,
+  resumePlayback,
+  pausePlayback
+} from "./components/PlaybackController.js";
+
+import {
+  loadVideoList
+} from "./components/PlaybackController.js";
+
 document.getElementById("root").innerHTML =
   '<div class="app">'
 
@@ -89,98 +124,161 @@ document.getElementById("root").innerHTML =
   + '</div>'
   + '</div>';
 
-// init all components
 initClipList(document.getElementById("clipListEl"));
-initTimeline(document.getElementById("tlContainer"), function(ms) { seekToTime(ms); });
-initPlayer(
-  document.getElementById("mainVideo"),
-  function()   { clipEnded(); },
-  function(ms) { updateHud(ms); }
+
+initTimeline(
+  document.getElementById("tlContainer"),
+  function(ms) {
+    seekToTime(ms);
+  }
 );
 
-// react to state changes and update UI
+initPlayer(
+  document.getElementById("mainVideo"),
+  function() {
+    clipEnded();
+  },
+  function(ms) {
+    updateHud(ms);
+  }
+);
+
 onStateChange(function(s) {
   var screen = document.getElementById("loadScreen");
+
   if (screen) {
-    var show = s.playerState === "idle" || s.playerState === "loading"
-            || s.playerState === "error" || s.playerState === "buffering";
-    screen.style.display = show ? "flex" : "none";
+    var show =
+      s.playerState === "idle" ||
+      s.playerState === "loading" ||
+      s.playerState === "error" ||
+      s.playerState === "buffering";
+
+    screen.style.display =
+      show ? "flex" : "none";
   }
 
-  var msg = document.getElementById("loadMsg");
-  if (msg) msg.textContent = s.statusMsg || "";
+  var msg =
+    document.getElementById("loadMsg");
 
-  if (s.pollStatus) {
-    var fill = document.getElementById("progressFill");
-    if (fill) fill.style.width = (s.pollStatus.tries / s.pollStatus.max * 100) + "%";
-  }
-
-  if (s.activeClips && s.activeClips.length && s.currentIdx >= 0) {
-    var c = s.activeClips[s.currentIdx];
-    if (c) {
-      var lbl  = document.getElementById("clipLabel");
-      var time = document.getElementById("clipTime");
-      var hLbl = document.getElementById("hClipLabel");
-      if (lbl)  lbl.textContent  = c.cameraType + " — " + c.dateStr;
-      if (time) time.textContent = c.displayTime + "  (clip " + (s.currentIdx + 1) + " / " + s.activeClips.length + ")";
-      if (hLbl) hLbl.textContent = c.cameraType;
-    }
-  }
+  if (msg)
+    msg.textContent =
+      s.statusMsg || "";
 });
 
-// button wiring
-document.getElementById("btnSearch").addEventListener("click", function() {
-  appState.imei = document.getElementById("inputImei").value.trim() || appState.imei;
-  appState.date = document.getElementById("inputDate").value || appState.date;
-  loadVideoList(false);
-});
+document
+  .getElementById("btnSearch")
+  .addEventListener("click", function() {
 
-document.getElementById("btnRefresh").addEventListener("click", function() {
-  appState.imei = document.getElementById("inputImei").value.trim() || appState.imei;
-  loadVideoList(true);
-});
+    appState.imei =
+      document
+        .getElementById("inputImei")
+        .value
+        .trim();
 
-document.querySelectorAll(".cam-btn").forEach(function(b) {
-  b.addEventListener("click", function() {
-    document.querySelectorAll(".cam-btn").forEach(function(x) { x.classList.remove("active"); });
-    b.classList.add("active");
-    appState.camera = b.dataset.cam;
+    appState.date =
+      document
+        .getElementById("inputDate")
+        .value;
+
+    loadVideoList(true);
+
   });
-});
 
-document.getElementById("btnPlay").addEventListener("click", function() {
-  toggleVideo();
-  var vid = document.getElementById("mainVideo");
-  this.innerHTML = vid.paused ? "&#9654;" : "&#9208;";
-  this.classList.toggle("active", !vid.paused);
-});
-
-document.getElementById("btnNext").addEventListener("click", function() { clipEnded(); });
-
-document.getElementById("btnPrev").addEventListener("click", function() {
-  var clips = appState.activeClips;
-  if (clips && appState.currentIdx > 0) seekToTime(clips[appState.currentIdx - 1].timestamp);
-});
-
-document.getElementById("btnBack").addEventListener("click", function() {
-  var v = document.getElementById("mainVideo");
-  if (v) v.currentTime = Math.max(0, v.currentTime - 30);
-});
-
-document.querySelectorAll(".speed-btn").forEach(function(b) {
-  b.addEventListener("click", function() {
-    document.querySelectorAll(".speed-btn").forEach(function(x) { x.classList.remove("active"); });
-    b.classList.add("active");
-    setRate(parseFloat(b.dataset.rate));
+document
+  .getElementById("btnRefresh")
+  .addEventListener("click", function() {
+    loadVideoList(true);
   });
-});
+
+document
+  .getElementById("btnPlay")
+  .addEventListener("click", function() {
+
+    toggleVideo();
+
+  });
+
+document
+  .getElementById("btnNext")
+  .addEventListener("click", function() {
+
+    nextClip();
+
+  });
+
+document
+  .getElementById("btnPrev")
+  .addEventListener("click", function() {
+
+    previousClip();
+
+  });
+
+document
+  .querySelectorAll(".speed-btn")
+  .forEach(function(btn) {
+    btn.addEventListener(
+      "click",
+      function() {
+        setRate(
+          parseFloat(
+            btn.dataset.rate
+          )
+        );
+      }
+    );
+  });
 
 function updateHud(ms) {
-  var el = document.getElementById("hTimestamp");
+  var el =
+    document.getElementById(
+      "hTimestamp"
+    );
+
   if (!el) return;
+
   var d = new Date(ms);
-  el.textContent = twoDigit(d.getHours()) + ":" + twoDigit(d.getMinutes()) + ":" + twoDigit(d.getSeconds());
+
+  el.textContent =
+    twoDigit(d.getHours()) +
+    ":" +
+    twoDigit(d.getMinutes()) +
+    ":" +
+    twoDigit(d.getSeconds());
 }
 
-// auto load on open
-loadVideoList(false);
+function twoDigit(n) {
+  return n < 10 ? "0" + n : n;
+}
+
+// FIX: wire camera selector buttons to appState.camera
+document
+  .querySelectorAll(".cam-btn")
+  .forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      document
+        .querySelectorAll(".cam-btn")
+        .forEach(function(b) { b.classList.remove("active"); });
+
+      btn.classList.add("active");
+
+      appState.camera = btn.dataset.cam;
+
+      // Update CAM LABEL overlay
+      var camLabel = document.querySelector(".cam-label");
+      if (camLabel) {
+        camLabel.textContent =
+          appState.camera === "Inward" ? "INWARD CAM" : "FORWARD CAM";
+      }
+    });
+  });
+
+// FIX: wire btnBack (seek back 30s in current clip)
+document
+  .getElementById("btnBack")
+  .addEventListener("click", function() {
+    var video = document.getElementById("mainVideo");
+    if (video) {
+      video.currentTime = Math.max(0, video.currentTime - 30);
+    }
+  });

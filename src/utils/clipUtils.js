@@ -2,9 +2,9 @@
 // CC = 03 means ForwardCam, 04 means InwardCam
 // each clip is 3 minutes long
 
-var CLIP_DURATION = 180; // seconds
+export var CLIP_DURATION = 180; // seconds
 
-function parseFilename(filename) {
+export function parseFilename(filename) {
   var name = filename.replace(/\.ts$/i, "");
   var p = name.split("_");
   if (p.length !== 7) return null;
@@ -36,7 +36,7 @@ function parseFilename(filename) {
   };
 }
 
-function buildTimeline(filenames) {
+export function buildTimeline(filenames) {
   var all = [];
   filenames.forEach(function(f) {
     var c = parseFilename(f);
@@ -67,14 +67,14 @@ function buildTimeline(filenames) {
   };
 }
 
-function findClipAt(clips, targetMs) {
+export function findClipAt(clips, targetMs) {
   for (var i = 0; i < clips.length; i++) {
     if (targetMs >= clips[i].timestamp && targetMs < clips[i].endTimestamp) return i;
   }
   return -1;
 }
 
-function seekOffset(clip, targetMs) {
+export function seekOffset(clip, targetMs) {
   return Math.max(0, (targetMs - clip.timestamp) / 1000);
 }
 
